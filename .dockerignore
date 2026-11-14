@@ -1,0 +1,8 @@
+node_modules
+.next
+out
+data
+.git
+promo
+*.md
+!public/agent.md

@@ -10,14 +10,20 @@
     "build": "next build",
     "start": "npx serve out",
     "typecheck": "tsc --noEmit -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "mcp": "tsx mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
     "html-to-image": "^1.11.13",
     "motion": "^13.4.4",
     "next": "16.4.2",
+    "playwright-core": "^1.65.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

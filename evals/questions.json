@@ -1,0 +1,45 @@
+[
+  {
+    "question": "How many screens are there, and what are their names?",
+    "includes": ["home (Home)", "detail (Recipe)"]
+  },
+  {
+    "question": "What note is written on the Home screen?",
+    "includes": ["Lists the saved recipes"]
+  },
+  {
+    "question": "What palette and shape does the design use?",
+    "includes": ["palette: purple", "shape: rounded"]
+  },
+  {
+    "question": "What is the Home screen's app bar title?",
+    "includes": ["topAppBar bar \"Recipes\""]
+  },
+  {
+    "question": "Which list row opens another screen, and with which transition?",
+    "includes": ["Tomato soup", "→ detail slide"]
+  },
+  {
+    "question": "Are there any dangling navigation targets?",
+    "explainEmpty": true
+  },
+  {
+    "question": "What does the back control on the Recipe screen do?",
+    "includes": ["→ back slideLeft"]
+  },
+  {
+    "question": "Which screen is desktop width?",
+    "phonesOnly": true,
+    "includes": ["412×892"],
+    "excludes": ["1280"]
+  },
+  {
+    "question": "What motion and contrast does the theme use?",
+    "includes": ["motion: expressive", "contrast: standard"]
+  },
+  {
+    "question": "Does the coding prompt for the Home screen mention the app bar title?",
+    "promptScreen": "home",
+    "includes": ["Recipes", "top app bar"]
+  }
+]

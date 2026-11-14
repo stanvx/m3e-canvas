@@ -128,6 +128,7 @@ import { barSlotOf, bodyRect, carryFrame, holdsEdgeBar, maxFrameLength, minFrame
 import { constrainModalRails, modalRailOf, updateRail } from "@/lib/rail";
 import { isProject, readProject, saveProject } from "@/lib/project";
 import { hasShareHash, readShareHash } from "@/lib/share";
+import { designApi, liveDesignId, shotFrameId, shouldApplyRemote } from "@/lib/liveDesign";
 import { LoadingIndicator } from "@/components/Loading";
 import { draftDesign } from "@/lib/ai";
 import { ShareDialog } from "@/components/ShareMenu";
@@ -524,6 +525,8 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   const [view, setView] = useState<View>({ x: 0, y: 0, z: 1 });
   /** Keep the server-rendered world hidden until its first fit has completed. */
   const [viewReady, setViewReady] = useState(false);
+  /** Bumped once a stored design is on screen and a `?shot=` view may be photographed. */
+  const [shotNonce, setShotNonce] = useState(0);
   /** screens ease to their new place and size for a moment after one changes size */
   const [easing, setEasing] = useState(false);
   /** the canvas transform eases while the camera glides to or from a screen */
@@ -613,6 +616,18 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   const initialLangRef = useRef<Lang>(initialLang);
   /** A saved document or the first viewport initialization prevents later reseeding. */
   const hadDocRef = useRef(false);
+  /** The stored design this page is editing, from `/d/<id>` or `?design=`. */
+  const liveIdRef = useRef<string | null | undefined>(undefined);
+  if (liveIdRef.current === undefined) liveIdRef.current = liveDesignId();
+  const liveRevRef = useRef<number | null>(null);
+  const liveMuteRef = useRef(false);
+  const livePushRef = useRef<number | null>(null);
+  const liveBusyRef = useRef(false);
+  const liveQueuedRef = useRef<Doc | null>(null);
+  const remoteFitRef = useRef(false);
+  const firstLiveFitRef = useRef(true);
+  const viewReadyRef = useRef(false);
+  const applyLiveRef = useRef<(doc: Partial<Doc>, reset: boolean) => void>(() => {});
 
   /* ---------- history ---------- */
   const pastRef = useRef<Snapshot[]>([]);
@@ -759,19 +774,101 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     if (isPlatform(doc.platform)) setPlatform(doc.platform);
     else if (reset) setPlatform(null);
   };
+  applyLiveRef.current = applyDoc;
+
+  const flushLive = (id: string) => {
+    if (liveBusyRef.current) return;
+    const body = liveQueuedRef.current;
+    const rev = liveRevRef.current;
+    if (!body || rev === null) return;
+    liveQueuedRef.current = null;
+    liveBusyRef.current = true;
+    void fetch(designApi(`/api/designs/${encodeURIComponent(id)}`), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ rev, doc: body }),
+    })
+      .then(async (res) => {
+        if (res.status === 409) {
+          const record = (await res.json()) as { rev?: unknown; doc?: unknown };
+          if (livePushRef.current !== null) {
+            window.clearTimeout(livePushRef.current);
+            livePushRef.current = null;
+          }
+          liveQueuedRef.current = null;
+          if (typeof record.rev === "number" && isProject(record.doc)) {
+            liveRevRef.current = record.rev;
+            liveMuteRef.current = true;
+            remoteFitRef.current = true;
+            applyLiveRef.current(record.doc, true);
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const saved = (await res.json()) as { rev?: unknown };
+        if (typeof saved.rev === "number" && liveRevRef.current === rev) liveRevRef.current = saved.rev;
+      })
+      .catch(() => {})
+      .finally(() => {
+        liveBusyRef.current = false;
+        if (liveQueuedRef.current) flushLive(id);
+      });
+  };
+
+  /* A page opened on a stored design follows that design. The browser holds the
+   * unguessable id; the MCP token never comes here. */
+  useEffect(() => {
+    const id = liveIdRef.current;
+    if (!id) return;
+    let stopped = false;
+    const pull = async () => {
+      try {
+        const res = await fetch(designApi(`/api/designs/${encodeURIComponent(id)}`));
+        if (stopped) return;
+        if (!res.ok) {
+          if (liveRevRef.current === null) {
+            viewReadyRef.current = true;
+            setViewReady(true);
+          }
+          return;
+        }
+        const record = (await res.json()) as { rev?: unknown; doc?: unknown };
+        if (stopped || typeof record.rev !== "number" || !isProject(record.doc)) return;
+        const localPending = livePushRef.current !== null || liveBusyRef.current || liveQueuedRef.current !== null;
+        if (!shouldApplyRemote(record.rev, liveRevRef.current, localPending)) return;
+        liveRevRef.current = record.rev;
+        liveMuteRef.current = true;
+        remoteFitRef.current = true;
+        applyLiveRef.current(record.doc, true);
+      } catch {
+        if (!stopped && liveRevRef.current === null) {
+          viewReadyRef.current = true;
+          setViewReady(true);
+        }
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 1500);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     // React's development double-run would otherwise read back its own first save
     if (loadedRef.current) return;
+    const live = !!liveIdRef.current;
+    if (live) hadDocRef.current = true;
     try {
-      const d = localStorage.getItem(DOC_KEY);
+      const d = live ? null : localStorage.getItem(DOC_KEY);
       if (d) {
         hadDocRef.current = true;
         applyDoc(JSON.parse(d) as Partial<Doc>, false);
         // frame mode is decided by the device (media-query effect), not restored
       }
       const before = d ? localStorage.getItem(BEFORE_KEY) : null;
-      if (!d) localStorage.removeItem(BEFORE_KEY);
+      if (!d && !live) localStorage.removeItem(BEFORE_KEY);
       if (before) {
         const value: unknown = JSON.parse(before);
         if (isProject(value)) setDraftBefore(value);
@@ -792,7 +889,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
       }
       setGlobalLang(initialLang);
       initialLangRef.current = initialLang;
-      if (!d) {
+      if (!d && !live) {
         setGroups(seed(initialLang));
         setFrames([{ ...SEED_FRAMES[0], name: t("home", initialLang) }]);
       }
@@ -875,6 +972,8 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
       ensureFrameRef.current();
       queueMicrotask(() => {
         fitRef.current();
+        if (liveIdRef.current && liveRevRef.current === null) return;
+        viewReadyRef.current = true;
         setViewReady(true);
       });
     };
@@ -885,6 +984,26 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
 
   useEffect(() => {
     if (!loadedRef.current || editAccess !== "editable") return;
+    const liveId = liveIdRef.current;
+    if (liveId) {
+      if (liveRevRef.current === null) return;
+      if (liveMuteRef.current) {
+        liveMuteRef.current = false;
+        return;
+      }
+      liveQueuedRef.current = { groups, frames, paletteKey, frame, title, brief, promptEdit, promptOptions, platform: platform ?? undefined, customPalette: customPalette ?? undefined, dynamicColor, theme };
+      if (livePushRef.current !== null) window.clearTimeout(livePushRef.current);
+      livePushRef.current = window.setTimeout(() => {
+        livePushRef.current = null;
+        flushLive(liveId);
+      }, 500);
+      return () => {
+        if (livePushRef.current !== null) {
+          window.clearTimeout(livePushRef.current);
+          livePushRef.current = null;
+        }
+      };
+    }
     try {
       localStorage.setItem(
         DOC_KEY,
@@ -1022,13 +1141,22 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     let x1 = PHONE_W + BEZEL;
     let y1 = PHONE_H + BEZEL;
     const fs = framesRef.current;
-    if (frameRef.current === "phone" && fs.length > 0) {
+    const wanted = shotFrameId();
+    const shooting = wanted !== null && fs.length > 0;
+    if (shooting) {
+      const target = (wanted ? fs.find((f) => f.id === wanted) : undefined) ?? fs[0];
+      const rect = frameRect(target);
+      x0 = rect.l;
+      y0 = rect.t;
+      x1 = rect.r;
+      y1 = rect.b;
+    } else if (frameRef.current === "phone" && fs.length > 0) {
       x0 = Math.min(...fs.map((f) => f.x)) - BEZEL;
       y0 = Math.min(...fs.map((f) => f.y)) - BEZEL - FRAME_LABEL_H;
       x1 = Math.max(...fs.map((f) => frameRect(f).r)) + BEZEL;
       y1 = Math.max(...fs.map((f) => frameRect(f).b)) + BEZEL;
     }
-    if (frameRef.current === "blank") {
+    if (!shooting && frameRef.current === "blank") {
       if (gs.length === 0) {
         setView({ x: 48, y: 48, z: 1 });
         return;
@@ -1047,10 +1175,10 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
       }
     }
     const mobile = mobileRef.current;
-    const pad = mobile ? 14 : 40;
-    const top = mobile ? 96 : 84; // keep the floating toolbar clear of the frame
-    const bottom = mobile ? 96 : pad;
-    if (mobile) {
+    const pad = shooting ? 12 : mobile ? 14 : 40;
+    const top = shooting ? 12 : mobile ? 96 : 84; // keep the floating toolbar clear of the frame
+    const bottom = shooting ? 12 : mobile ? 96 : pad;
+    if (mobile && !shooting) {
       // a phone zooms to the screen's width and starts at its top; the rest scrolls
       const z = clamp((r.width - pad * 2) / (x1 - x0), MIN_Z, MAX_Z);
       setView({ x: (r.width - (x1 - x0) * z) / 2 - x0 * z, y: top - y0 * z, z });
@@ -1073,6 +1201,40 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
   }, []);
   const fitRef = useRef(fit);
   fitRef.current = fit;
+
+  useLayoutEffect(() => {
+    if (!remoteFitRef.current) return;
+    remoteFitRef.current = false;
+    const shooting = shotFrameId() !== null;
+    if (shooting || firstLiveFitRef.current) fitRef.current();
+    firstLiveFitRef.current = false;
+    viewReadyRef.current = true;
+    setViewReady(true);
+    if (shooting) setShotNonce((n) => n + 1);
+  }, [groups, frames]);
+
+  useEffect(() => {
+    if (shotNonce === 0) return;
+    let cancelled = false;
+    let handle = 0;
+    const mark = () => {
+      if (cancelled) return;
+      const boot = document.querySelector(".m3e-boot");
+      const opacity = boot ? Number.parseFloat(getComputedStyle(boot).opacity) : 0;
+      if (boot && opacity > 0.02) {
+        handle = requestAnimationFrame(mark);
+        return;
+      }
+      const wanted = shotFrameId() ?? "";
+      const target = (wanted ? framesRef.current.find((f) => f.id === wanted) : undefined) ?? framesRef.current[0];
+      if (target) document.documentElement.dataset.m3eShot = target.id;
+    };
+    handle = requestAnimationFrame(mark);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(handle);
+    };
+  }, [shotNonce]);
 
   /* touch: two fingers pinch-zoom and pan, cancelling whatever one finger started */
   const onTouchCapture = (e: React.PointerEvent) => {
@@ -3867,7 +4029,8 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     flex: "0 0 auto",
   };
 
-  const showRight = rightOpen && !isMobile;
+  const shooting = shotFrameId() !== null;
+  const showRight = rightOpen && !isMobile && !shooting;
   const overBin = (!!drag?.active && drag.overBin) || (gesture?.kind === "group" && gesture.overBin);
   const guide = drag?.active ? drag.guide : gesture?.kind === "group" && gesture.moved ? (gesture.guide ?? null) : null;
   const visibleWorld = (() => {
@@ -4022,7 +4185,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
         })()}
 
         {/* ---- left: rail + parts / layers ---- */}
-        {!isMobile && (
+        {!isMobile && !shooting && (
           <aside style={{ ...panelStyle, width: leftOpen ? leftW : RAIL_W, flexDirection: "row", transition: "width 200ms cubic-bezier(0.2, 0, 0, 1)" }}>
             {/* dropping a canvas part anywhere on this side deletes it, whichever tab is open */}
             {overBin && (
@@ -4554,7 +4717,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
               </svg>
             </div>
           )}
-          <Toolbar
+          {!shooting && <Toolbar
             p={p}
             mode={mode}
             onMode={setMode}
@@ -4595,9 +4758,9 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
                 showToast(t("copied", lang), 1400, "check");
               } catch {}
             }}
-          />
+          />}
 
-          {isMobile && (
+          {isMobile && !shooting && (
             <div
               style={{
                 position: "absolute",
@@ -4616,7 +4779,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             </div>
           )}
 
-          {isMobile && sheet === null && (
+          {isMobile && !shooting && sheet === null && (
             <button
               onClick={() => addPart("button")}
               title={t("addButton", lang)}
@@ -4643,7 +4806,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             </button>
           )}
 
-          {isMobile && selected && sheet === null && (
+          {isMobile && !shooting && selected && sheet === null && (
             <MobileActionBar
               p={p}
               onEdit={() => setSheet("edit")}
@@ -4708,7 +4871,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             </div>
           )}
 
-          {!rightOpen && !isMobile && (
+          {!rightOpen && !isMobile && !shooting && (
             <div
               style={{ position: "absolute", right: 20, top: 20, zIndex: 45 }}
             >
