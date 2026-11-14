@@ -1632,6 +1632,8 @@ export type Item = {
   variant: Variant;
   supporting?: string;
   size?: number;
+  /** text: optional width in dp; omitted keeps a single line */
+  wrapWidth?: number;
   radiusTop?: number;
   radiusBottom?: number;
   /** boxes only: each corner on its own, when the pairs above are not enough */
@@ -1653,7 +1655,7 @@ export type Item = {
   textAlign?: CardAlign;
   /** cards: a color role for the headline and body instead of the automatic one */
   textColor?: TextToken;
-  /** on/off state for switches, checkboxes and chips */
+  /** on/off state for switches, checkboxes, radios, chips and selectable cards */
   checked?: boolean;
   /** a switch whose handle stays plain when on, without the check icon */
   /** 0..100 for sliders and determinate progress; undefined = indeterminate */
@@ -1997,7 +1999,7 @@ export const COLOR_TOKENS: { key: ColorToken; label: string }[] = [
 /** the background a card draws when no token is set: it follows the variant */
 export const cardDefaultFillOf = (variant: Variant): ColorToken =>
   variant === "outlined" ? "surface" : variant === "elevated" ? "surfaceContainerLow" : "surfaceContainerHighest";
-export const cardFillOf = (it: Item): ColorToken => it.fill ?? cardDefaultFillOf(it.variant);
+export const cardFillOf = (it: Item): ColorToken => it.fill ?? (it.checked ? "primaryContainer" : cardDefaultFillOf(it.variant));
 
 /** where a card's image area sits: a band along the top or the bottom, a column down a side, or
  *  the whole background; sketches saved before placement existed stay on top */
@@ -2032,12 +2034,12 @@ export const isTextToken = (v: unknown): v is TextToken => TEXT_TOKENS.some((t) 
 export function cardTextColorOf(it: Item, p: Palette): string {
   if (it.textColor) return p[it.textColor];
   if (!it.noImage && cardImagePosOf(it) === "background") return it.src ? "#ffffff" : p.onPrimaryContainer;
-  return it.fill ? onToken(it.fill, p) : p.onSurface;
+  return it.fill || it.checked ? onToken(cardFillOf(it), p) : p.onSurface;
 }
 /** the body's color: a plain card keeps M3's onSurfaceVariant at full opacity; anything
  *  colored, filled or over an image reuses the headline color at reduced opacity */
 export function cardBodyColorOf(it: Item, p: Palette): { color: string; opacity: number } {
-  const plain = !it.textColor && !it.fill && (it.noImage || cardImagePosOf(it) !== "background");
+  const plain = !it.textColor && !it.fill && !it.checked && (it.noImage || cardImagePosOf(it) !== "background");
   return plain ? { color: p.onSurfaceVariant, opacity: 1 } : { color: cardTextColorOf(it, p), opacity: 0.8 };
 }
 /** the scrim under text on a photo: it fades in from the text's side, dark under light
@@ -2309,11 +2311,12 @@ export function freeRadii(g: Group, widths: Record<string, number>): Map<string,
   return radiiOfRuns(explodeGroup(g, widths));
 }
 
-/** a run belongs to the frame that contains its centre */
+/** A run belongs to the frame containing its centre; a wholly unmeasured run uses its origin. */
 export function frameOfGroup(g: Group, frames: Frame[], widths: Record<string, number>): Frame | undefined {
   const bb = groupBounds(g, widths);
-  const cx = (bb.l + bb.r) / 2;
-  const cy = (bb.t + bb.b) / 2;
+  const pending = g.items.length > 0 && g.items.every((it) => isMeasured(it) && widths[it.id] === undefined);
+  const cx = pending ? bb.l : (bb.l + bb.r) / 2;
+  const cy = pending ? bb.t : (bb.t + bb.b) / 2;
   return frames.find((f) => {
     const fr = frameRect(f);
     return cx >= fr.l && cx <= fr.r && cy >= fr.t && cy <= fr.b;
@@ -2454,6 +2457,29 @@ export const progressThickness = (it: Item): number => {
   return it.kind === "circularProgress" ? Math.min(v, maxRingThickness(it.size ?? KIND_SPEC.circularProgress.w)) : v;
 };
 
+/** The measuring layer stores text height alongside widths; the NUL prefix is runtime-only. */
+export const textHeightKey = (id: string) => `\0height:${id}`;
+
+/** shortcut: Node estimates glyph widths; use font metrics if server Tidy needs pixel accuracy. */
+function wrappedTextHeight(it: Item, fontSize: number): number {
+  const available = Math.max(1, (it.wrapWidth ?? 120) - 4);
+  let lines = 1;
+  let used = 0;
+  for (const word of it.label.split(/(\s+)/u)) {
+    const width = Array.from(word).reduce((sum, ch) => sum + fontSize * (/[^\u0000-\u00ff]/u.test(ch) ? 1 : 0.5), 0);
+    if (/^\s+$/u.test(word)) {
+      if (word.includes("\n")) { lines += word.split("\n").length - 1; used = 0; }
+      else if (used) used += width;
+      continue;
+    }
+    if (used && used + width > available) { lines++; used = 0; }
+    const rows = Math.max(1, Math.ceil(width / available));
+    lines += rows - 1;
+    used += width - (rows - 1) * available;
+  }
+  return Math.ceil(lines * fontSize * 1.3);
+}
+
 export function sizeOf(it: Item, widths: Record<string, number>) {
   const s = KIND_SPEC[it.kind];
   const n = it.size ?? s.defSize ?? s.w;
@@ -2481,7 +2507,7 @@ export function sizeOf(it: Item, widths: Record<string, number>) {
     case "tabs":
       return { w: n, h: s.h };
     case "text":
-      return { w: widths[it.id] ?? 120, h: Math.round(n * 1.3) };
+      return it.wrapWidth ? { w: it.wrapWidth, h: widths[textHeightKey(it.id)] ?? wrappedTextHeight(it, n) } : { w: widths[it.id] ?? 120, h: Math.round(n * 1.3) };
     case "fab":
       return menuOpen(it) ? { w: widths[it.id] ?? 220, h: menuHeight(it, FAB_MENU_CLOSE) } : { w: n, h: n };
     case "iconButton":

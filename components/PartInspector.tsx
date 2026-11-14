@@ -317,6 +317,8 @@ function TextSizeRows({ item, onChange, p }: { item: Item; onChange: Change; p: 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <Slider icon="format_size" title={t("fontSize", lang)} value={size} min={spec.size!.min} max={spec.size!.max} step={1} onChange={(v) => onChange({ size: v })} p={p} unit="sp" />
+      <Toggle on={item.wrapWidth !== undefined} onChange={(on) => onChange({ wrapWidth: on ? 380 : undefined })} p={p} icon="wrap_text" label={t("wrapText", lang)} grow />
+      {item.wrapWidth !== undefined && <Slider icon="width" title={t("width", lang)} value={item.wrapWidth} min={16} max={1600} step={1} onChange={(wrapWidth) => onChange({ wrapWidth })} p={p} />}
       {/* the four steps of the type scale, named the way every other size is: the role and the sp are the hover text */}
       <Segmented<string>
         options={TEXT_SIZES.map((s, i) => ({ key: s.key, label: ["S", "M", "L", "XL"][i], title: `${t(s.key === "body" ? "typeBody" : s.key === "title" ? "typeTitle" : s.key === "headline" ? "typeHeadline" : "typeDisplay", lang)} ${s.value}sp`, style: RUN_CELL }))}
@@ -638,6 +640,11 @@ export function PartInspector({
       {kind === "navRail" && (
         <Section id="part-rail" icon="side_navigation" title={t("railState", lang)} p={p}>
           <RailRows item={item} onChange={onChange} p={p} standalone={railStandalone} />
+        </Section>
+      )}
+      {kind === "card" && (
+        <Section id="part-state" icon="tune" title={t("state", lang)} p={p}>
+          <Toggle on={!!item.checked} onChange={(checked) => onChange({ checked })} p={p} icon="check_circle" label={t("selectedCard", lang)} grow />
         </Section>
       )}
       {kind === "loadingIndicator" && (

@@ -471,3 +471,17 @@ describe("a screen whose body scrolls", () => {
     expect(prompt(lang, 892)).not.toContain(SCROLLS[lang]);
   });
 });
+
+
+it.each(LANGS)("describes wrapped text and a selected card in %s", (lang) => {
+  setGlobalLang(lang);
+  const doc = fixture();
+  doc.groups.push(
+    { id: "g-heading", x: 16, y: 110, axis: "y", items: [{ ...makeItem("text"), id: "heading", label: "How do you write messages?", wrapWidth: 300 }] },
+    { id: "g-choice", x: 16, y: 220, axis: "y", items: [{ ...makeItem("card"), id: "choice", label: "Casual", noImage: true, checked: true }] },
+  );
+  const prompt = buildPrompt(doc, {}, undefined, lang);
+  expect(prompt).toContain("300dp");
+  expect(prompt).toContain("2dp");
+  expect(prompt).toContain("primaryContainer");
+});

@@ -25,25 +25,9 @@ export function guideText(): string {
   return `${guide}\n\n${GUIDE_ADDENDUM}\n`;
 }
 
-export type DesignView = {
-  id: string;
-  rev: number;
-  url: string;
-  share: string;
-  outline: string;
-  title: string;
-};
-
-async function viewOf(record: DesignRecord, base: string): Promise<DesignView> {
+function receipt(record: DesignRecord, base: string) {
   const root = base.replace(/\/$/, "");
-  return {
-    id: record.id,
-    rev: record.rev,
-    url: `${root}/d/${record.id}/`,
-    share: await shareLink(record.doc, root),
-    outline: outline(record.doc),
-    title: record.doc.title,
-  };
+  return { id: record.id, rev: record.rev, url: `${root}/d/${record.id}/` };
 }
 
 function fail(prepared: Extract<Prepared, { ok: false }>) {
@@ -54,12 +38,12 @@ export async function createFromDraft(input: unknown, base: string, tidy = true)
   const prepared = prepare(input, { tidy });
   if (!prepared.ok) return fail(prepared);
   const record = await createDesign(prepared.doc);
-  const view = await viewOf(record, base);
+  const view = receipt(record, base);
   return { ok: true as const, ...view, text: createdText(view) };
 }
 
-function createdText(view: DesignView): string {
-  return `Stored ${view.id} (rev ${view.rev}).\nLive canvas: ${view.url}\n\n${view.outline}`;
+function createdText(view: ReturnType<typeof receipt>): string {
+  return `Stored ${view.id} (rev ${view.rev}).\nLive canvas: ${view.url}`;
 }
 
 export async function editStored(id: string, operations: unknown, base: string) {
@@ -72,7 +56,7 @@ export async function editStored(id: string, operations: unknown, base: string) 
     const message = "missing" in written ? `No design has id "${id}".` : `Design ${id} changed (now rev ${written.conflict.rev}). Read it again and retry.`;
     return { ok: false as const, problems: [{ path: "id", message }], text: message };
   }
-  const view = await viewOf(written.record, base);
+  const view = receipt(written.record, base);
   return { ok: true as const, ...view, text: createdText(view) };
 }
 
@@ -86,16 +70,16 @@ export async function themeStored(id: string, patch: ThemePatch, base: string) {
     const message = "missing" in written ? `No design has id "${id}".` : `Design ${id} changed (now rev ${written.conflict.rev}). Read it again and retry.`;
     return { ok: false as const, problems: [{ path: "id", message }], text: message };
   }
-  const view = await viewOf(written.record, base);
+  const view = receipt(written.record, base);
   return { ok: true as const, ...view, text: createdText(view) };
 }
 
 export async function readStored(id: string, format: "outline" | "prompt" | "json", screen: string | undefined, base: string) {
   const current = await readDesign(id);
   if (!current) return { ok: false as const, text: `No design has id "${id}".` };
-  const view = await viewOf(current, base);
+  if (screen && !current.doc.frames.some((f) => f.id === screen)) return { ok: false as const, text: `No screen has id "${screen}".` };
+  const view = { ...receipt(current, base), share: await shareLink(current.doc, base.replace(/\/$/, "")), outline: outline(current.doc, screen) };
   if (format === "json") {
-    if (screen && !current.doc.frames.some((f) => f.id === screen)) return { ok: false as const, text: `No screen has id "${screen}".` };
     const doc = screen ? projectScreen(current.doc, screen) : current.doc;
     return { ok: true as const, ...view, text: JSON.stringify(doc, null, 2) };
   }
@@ -103,7 +87,7 @@ export async function readStored(id: string, format: "outline" | "prompt" | "jso
     const text = buildPrompt({ ...current.doc, platform: platformOf(current.doc) }, {}, screen, "en");
     return { ok: true as const, ...view, text };
   }
-  const text = `${view.url}\n\n${outline(current.doc, screen)}`;
+  const text = `${view.url}\n\n${view.outline}`;
   return { ok: true as const, ...view, text };
 }
 

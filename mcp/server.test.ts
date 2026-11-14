@@ -67,6 +67,44 @@ describe("mcp http", () => {
     expect(text).toContain("m3e_screenshot");
   });
 
+  it("publishes field schemas and returns compact write receipts", async () => {
+    const rpc = async (method: string, params?: unknown) => {
+      const response = await mcp({ jsonrpc: "2.0", id: 10, method, params }, "test-token");
+      expect(response.status).toBe(200);
+      const payload = await response.text();
+      const body = JSON.parse(payload.startsWith("event:") ? payload.split("\n").find((line) => line.startsWith("data: "))!.slice(6) : payload);
+      expect(body.error).toBeUndefined();
+      return body.result;
+    };
+    const listed = await rpc("tools/list");
+    const create = listed.tools.find((tool: { name: string }) => tool.name === "m3e_create_design");
+    const fields = create.inputSchema.properties.doc.properties.groups.items.properties;
+    expect(fields.screen.type).toBe("string");
+    expect(fields.items.items.required).toContain("kind");
+    expect(fields.items.items.properties.variant.enum).toContain("outlined");
+    expect(fields.items.items.properties.wrapWidth.type).toBe("number");
+    const call = (name: string, args: unknown) => rpc("tools/call", { name, arguments: args });
+    const created = await call("m3e_create_design", { doc: {
+      title: "Compact", frames: [{ id: "home", name: "Home" }],
+      groups: [{ screen: "home", items: [{ id: "save", kind: "button", label: "Save" }] }],
+    } });
+    expect(created.isError).not.toBe(true);
+    const id = created.structuredContent.id;
+    const receipt = (result: typeof created, rev: number) => {
+      expect(result.isError).not.toBe(true);
+      expect(result.structuredContent).toEqual({ id, rev, url: `${base}/d/${id}/` });
+      expect(result.content[0].text).not.toContain("Save");
+    };
+    receipt(created, 1);
+    receipt(await call("m3e_edit_design", { id, operations: [{ op: "update_part", id: "save", patch: { label: "Done" } }] }), 2);
+    receipt(await call("m3e_set_theme", { id, shape: "full" }), 3);
+    const read = await call("m3e_get_design", { id });
+    expect(read.structuredContent.share).toContain("#docz=");
+    expect(read.structuredContent.outline).toContain("Done");
+    const resources = await rpc("resources/list");
+    expect(resources.resources).toContainEqual(expect.objectContaining({ uri: "m3e://guide" }));
+  });
+
   it("serves a stored design and rejects a stale write", async () => {
     const health = await fetch(`${base}/api/health`);
     expect(await health.json()).toEqual({ ok: true });

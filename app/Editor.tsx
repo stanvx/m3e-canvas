@@ -97,6 +97,7 @@ import {
   SETTLE_CSS_VARS,
   SETTLE_MS,
   sizeOf,
+  textHeightKey,
   toggleIcon,
   SNAP_CROSS,
   SNAP_MAIN,
@@ -1060,6 +1061,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
     const next: Record<string, number> = {};
     measureEls.current.forEach((el, id) => {
       next[id] = Math.ceil(el.getBoundingClientRect().width);
+      if (el.dataset.wrap === "true") next[textHeightKey(id)] = Math.ceil(el.getBoundingClientRect().height);
     });
     const keys = Object.keys(next);
     const changed =
@@ -4081,6 +4083,7 @@ export default function Editor({ initialLang, onReady }: { initialLang: Lang; on
             .map((it) => (
               <div
                 key={it.id}
+                data-wrap={it.kind === "text" && it.wrapWidth ? "true" : undefined}
                 ref={(el) => {
                   if (el) measureEls.current.set(it.id, el);
                   else measureEls.current.delete(it.id);

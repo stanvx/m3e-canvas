@@ -153,3 +153,35 @@ describe("edits", () => {
     expect(text).toMatch(/shape: rounded/);
   });
 });
+
+describe("measured screen membership and new part fields", () => {
+  it.each(["text", "radio", "button"])("keeps an unmeasured %s near the right edge on its screen", (kind) => {
+    const draft = {
+      frames: [{ id: "home", name: "Home", x: 0, y: 0 }],
+      groups: [{ id: "edge", x: 373, y: 200, items: [{ id: "ink", kind, label: kind === "text" ? "p" : "" }] }],
+    };
+    const result = prepare(draft, { tidy: false });
+    expect(result.ok, result.ok ? "" : formatProblems(result.problems)).toBe(true);
+    const outside = prepare({ ...draft, groups: [{ ...draft.groups[0], x: 420 }] }, { tidy: false });
+    expect(outside.ok).toBe(false);
+  });
+
+  it("preserves wrap width and card state through edits, and validates them", () => {
+    const result = prepare({
+      frames: [{ id: "home", name: "Home" }],
+      groups: [{ screen: "home", items: [{ id: "text", kind: "text", label: "How do you write messages?", wrapWidth: 180 }] },
+        { screen: "home", items: [{ id: "card", kind: "card", checked: true, noImage: true }] }],
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(isProject(result.doc)).toBe(true);
+    const edited = applyOps(result.doc, [{ op: "update_part", id: "text", patch: { wrapWidth: 240 } }, { op: "update_part", id: "card", patch: { checked: false } }]);
+    expect(edited.ok).toBe(true);
+    if (!edited.ok) return;
+    expect(part(edited.doc, "text").items[0].wrapWidth).toBe(240);
+    expect(part(edited.doc, "card").items[0].checked).toBe(false);
+    for (const patch of [{ wrapWidth: 0 }, { wrapWidth: -5 }, { wrapWidth: "wide" }, { checked: "yes" }]) {
+      expect(applyOps(result.doc, [{ op: "update_part", id: "text", patch }]).ok).toBe(false);
+    }
+  });
+});

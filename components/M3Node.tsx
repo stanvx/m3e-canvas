@@ -416,7 +416,10 @@ function TextContent({ item, p }: { item: Item; p: Palette }) {
         fontWeight: item.bold ? w(700, 800) : w(400, fs >= 22 ? 600 : 500),
         letterSpacing: fs >= 28 ? -0.25 : 0,
         color: p.onSurface,
-        whiteSpace: "nowrap",
+        whiteSpace: item.wrapWidth ? "pre-wrap" : "nowrap",
+        overflowWrap: item.wrapWidth ? "anywhere" : undefined,
+        width: item.wrapWidth,
+        boxSizing: "border-box",
         padding: "0 2px",
       }}
     >
@@ -1710,7 +1713,7 @@ export function boxStyle(item: Item, p: Palette): React.CSSProperties {
         ? { background: "transparent", color: p.onSurfaceVariant, border: `1px solid ${p.outlineVariant}` }
         : { background: p.surfaceContainerLow, color: p.onSurfaceVariant, border: "none" };
     case "card":
-      return { background: p[cardFillOf(item)], border: item.variant === "outlined" ? `1px solid ${p.outlineVariant}` : "none" };
+      return { background: p[cardFillOf(item)], border: item.checked ? `2px solid ${p.primary}` : item.variant === "outlined" ? `1px solid ${p.outlineVariant}` : "none" };
     case "textField":
     case "select":
       return item.variant === "filled"
@@ -1902,7 +1905,7 @@ export function M3Node({
       style={{
         ...boxStyle(drawn, palette),
         width: measured && !easeWidth ? undefined : size.w,
-        height: size.h,
+        height: item.kind === "text" && item.wrapWidth ? "auto" : size.h,
         display: measured ? "inline-flex" : "block",
         alignItems: "center",
         overflow: clips ? "hidden" : "visible",
@@ -1961,7 +1964,7 @@ export function M3Static({
       style={{
         ...boxStyle(item, palette),
         width: measured ? undefined : size.w,
-        height: size.h,
+        height: item.kind === "text" && item.wrapWidth ? "auto" : size.h,
         display: measured ? "inline-flex" : "block",
         alignItems: "center",
         overflow: clips ? "hidden" : "visible",

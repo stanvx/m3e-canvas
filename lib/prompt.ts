@@ -131,11 +131,18 @@ function cardText(it: Item, lang: Lang): string {
 /** a card's background and corners when the author changed them, as one parenthetical */
 function cardLook(it: Item, lang: Lang): string {
   const parts: string[] = [];
-  if (it.fill) parts.push(lang === "ja" ? `背景 ${it.fill}` : lang === "zh" ? `背景 ${it.fill}` : lang === "ko" ? `배경 ${it.fill}` : `on ${it.fill}`);
+  if (it.checked) parts.push(lang === "ja" ? "選択済み、primary の 2dp 枠線" : lang === "zh" ? "已选择，2dp primary 边框" : lang === "ko" ? "선택됨, 2dp primary 테두리" : "selected, with a 2dp primary border");
+  const fill = it.fill ?? (it.checked ? "primaryContainer" : undefined);
+  if (fill) parts.push(lang === "ja" ? `背景 ${fill}` : lang === "zh" ? `背景 ${fill}` : lang === "ko" ? `배경 ${fill}` : `on ${fill}`);
   if (it.corners) parts.push(boxCorners(it, lang));
   else if (it.radiusTop !== undefined) parts.push(lang === "ja" ? `角丸 ${it.radiusTop}dp` : lang === "zh" ? `圆角 ${it.radiusTop}dp` : lang === "ko" ? `모서리 ${it.radiusTop}dp` : `${it.radiusTop}dp corners`);
   if (!parts.length) return "";
   return lang === "en" ? ` ${parts.join(", ")}` : lang === "ko" ? `(${parts.join(", ")})` : `（${parts.join("、")}）`;
+}
+
+function textWrap(it: Item, lang: Lang): string {
+  if (!it.wrapWidth) return "";
+  return lang === "ja" ? `（幅 ${it.wrapWidth}dp で折り返す）` : lang === "zh" ? `（在 ${it.wrapWidth}dp 宽度内换行）` : lang === "ko" ? ` (${it.wrapWidth}dp 너비에서 줄바꿈)` : ` (wrap within ${it.wrapWidth}dp)`;
 }
 
 /** an image's web address, when it was given as one rather than picked from a file */
@@ -359,7 +366,7 @@ function itemJa(it: Item): string {
     case "slider":
       return `スライダー（初期値 ${it.value ?? 40}%）`;
     case "text":
-      return `${it.bold ? "太字の" : ""}テキスト${q(it.label)}（${it.size ?? 28}sp）`;
+      return `${it.bold ? "太字の" : ""}テキスト${q(it.label)}（${it.size ?? 28}sp）${textWrap(it, "ja")}`;
     case "image":
       return `${imageDims(it)} の画像${imageSrc(it) ? `（${imageSrc(it)} の画像を表示）` : it.src ? "（指定の画像を表示）" : "プレースホルダー"}`;
     case "camera":
@@ -456,7 +463,7 @@ function itemEn(it: Item): string {
     case "slider":
       return `a slider (initial value ${it.value ?? 40}%)`;
     case "text":
-      return `${it.bold ? "bold " : ""}text ${q(it.label)} at ${it.size ?? 28}sp`;
+      return `${it.bold ? "bold " : ""}text ${q(it.label)} at ${it.size ?? 28}sp${textWrap(it, "en")}`;
     case "image":
       return `a ${imageDims(it)} image${imageSrc(it) ? ` (load it from ${imageSrc(it)})` : it.src ? " (use the provided image)" : " placeholder"}`;
     case "camera":
@@ -553,7 +560,7 @@ function itemZh(it: Item): string {
     case "slider":
       return `滑块（初始值 ${it.value ?? 40}%）`;
     case "text":
-      return `${it.bold ? "粗体" : ""}文本${q(it.label)}（${it.size ?? 28}sp）`;
+      return `${it.bold ? "粗体" : ""}文本${q(it.label)}（${it.size ?? 28}sp）${textWrap(it, "zh")}`;
     case "image":
       return `${imageDims(it)} 的图片${imageSrc(it) ? `（显示 ${imageSrc(it)} 的图片）` : it.src ? "（显示指定的图片）" : "占位符"}`;
     case "camera":
@@ -632,7 +639,7 @@ function itemKo(it: Item): string {
     case "switch": return `${q(it.label)} 스위치(초기 상태 ${it.checked ? "켜짐" : "꺼짐"})`;
     case "checkbox": return `${q(it.label)} 체크박스(초기 상태 ${it.checked ? "선택됨" : "선택 안 됨"})`;
     case "slider": return `슬라이더(초깃값 ${it.value ?? 40}%)`;
-    case "text": return `${it.bold ? "굵은 " : ""}텍스트 ${q(it.label)}(${it.size ?? 28}sp)`;
+    case "text": return `${it.bold ? "굵은 " : ""}텍스트 ${q(it.label)}(${it.size ?? 28}sp)${textWrap(it, "ko")}`;
     case "image": return `${imageDims(it)} 이미지${imageSrc(it) ? `(${imageSrc(it)}의 이미지 표시)` : it.src ? "(지정한 이미지 표시)" : " 자리표시자"}`;
     case "camera": return `${viewSize(it, 4 / 3)} 카메라 미리보기`;
     case "map": return `${viewSize(it, 3 / 4)} 지도`;

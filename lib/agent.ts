@@ -31,6 +31,7 @@ import {
   frameOfGroup,
   frameSizeOf,
   groupBounds,
+  isMeasured,
   isCardAlign,
   isCardImagePos,
   isPlace,
@@ -114,6 +115,7 @@ function itemProblems(item: unknown, path: string): Problem[] {
     const value = item[key];
     if (value !== undefined && !Number.isFinite(value)) bad(key, `${key} must be a finite number.`);
   }
+  if (item.wrapWidth !== undefined && !(Number.isFinite(item.wrapWidth) && (item.wrapWidth as number) > 0)) bad("wrapWidth", "wrapWidth must be a positive number of dp.");
   if (item.trackThickness !== undefined && !isTrackThickness(item.trackThickness)) bad("trackThickness", "trackThickness must be a whole number of dp from 2 to 16.");
   if (item.imagePos !== undefined && !isCardImagePos(item.imagePos)) bad("imagePos", "imagePos is not a card image position.");
   if (item.contentAlign !== undefined && !isCardAlign(item.contentAlign)) bad("contentAlign", "contentAlign must be start, center or end.");
@@ -128,7 +130,7 @@ function itemProblems(item: unknown, path: string): Problem[] {
       bad("tabs", "tabs must be a list of { label, icon? }.");
     }
   }
-  for (const key of ["railExpanded", "railModal", "collapseOnScroll"] as const) {
+  for (const key of ["railExpanded", "railModal", "collapseOnScroll", "checked"] as const) {
     if (item[key] !== undefined && typeof item[key] !== "boolean") bad(key, `${key} must be true or false.`);
   }
   return out;
@@ -384,7 +386,7 @@ function grow(doc: Doc): Doc {
     const width = frameSizeOf(frame).w;
     const mine = doc.groups.filter((g) => {
       const bb = groupBounds(g, {});
-      const cx = (bb.l + bb.r) / 2;
+      const cx = g.items.length > 0 && g.items.every(isMeasured) ? bb.l : (bb.l + bb.r) / 2;
       return cx >= frame.x && cx <= frame.x + width && bb.b > frame.y;
     });
     if (mine.length === 0) return frame;
@@ -565,7 +567,7 @@ function patchRecord<T extends object>(base: T, patch: Record<string, unknown>, 
 
 const FRAME_PATCH = new Set(["name", "x", "y", "w", "h", "bg", "note", "swipe", "place", "length"]);
 const ITEM_PATCH = new Set([
-  "kind", "label", "icon", "icon2", "variant", "supporting", "size", "radiusTop", "radiusBottom", "corners", "tabs",
+  "kind", "label", "icon", "icon2", "variant", "supporting", "size", "wrapWidth", "radiusTop", "radiusBottom", "corners", "tabs",
   "selected", "switch", "noImage", "imagePos", "imageSize", "contentAlign", "textAlign", "textColor", "checked",
   "value", "wavy", "railExpanded", "railModal", "trackThickness", "contained", "note", "bold", "size2",
   "collapseOnScroll", "fill", "iconFill", "src", "action", "actions", "toggle", "layout", "count",

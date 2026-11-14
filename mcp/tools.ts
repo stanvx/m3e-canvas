@@ -1,5 +1,7 @@
 import { createMcpHandler, McpServer, ResourceTemplate } from "@modelcontextprotocol/server";
 import { z } from "zod";
+import { readDesign } from "../lib/designStore";
+import { documentSchema, frameSchema, framePatchSchema, partSchema, partPatchSchema } from "./schema";
 import { PALETTES } from "../lib/tokens";
 import { screenshotDesign } from "./screenshot";
 import { createFromDraft, editStored, guideText, listStored, previewFor, readStored, themeStored } from "./service";
@@ -7,23 +9,23 @@ import { createFromDraft, editStored, guideText, listStored, previewFor, readSto
 const paletteKeys = [...PALETTES.map((p) => p.key), "custom"] as unknown as [string, ...string[]];
 
 const operation = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("set_doc"), doc: z.record(z.string(), z.unknown()), tidy: z.boolean().optional() }).describe("Replace the design with a new document."),
+  z.object({ op: z.literal("set_doc"), doc: documentSchema, tidy: z.boolean().optional() }).describe("Replace the design with a new document."),
   z.object({
     op: z.literal("add_screen"),
-    frame: z.record(z.string(), z.unknown()).describe("Screen. name is required. Omit x and y to place it to the right."),
-    parts: z.array(z.record(z.string(), z.unknown())).optional().describe("Parts to stack on the new screen, each a part object."),
+    frame: frameSchema.describe("Screen. name is required. Omit x and y to place it to the right."),
+    parts: z.array(partSchema).optional().describe("Parts to stack on the new screen, each a part object."),
   }),
-  z.object({ op: z.literal("update_screen"), id: z.string(), patch: z.record(z.string(), z.unknown()).describe("Fields to change. null clears a field. Moving x or y moves the screen's parts.") }),
+  z.object({ op: z.literal("update_screen"), id: z.string(), patch: framePatchSchema.describe("Fields to change. null clears a field. Moving x or y moves the screen's parts.") }),
   z.object({ op: z.literal("remove_screen"), id: z.string() }).describe("Delete a screen, its parts, and links that pointed at it."),
   z.object({
     op: z.literal("add_part"),
     screen: z.string(),
-    part: z.record(z.string(), z.unknown()).describe("A part. kind is required. label, icon and variant are filled in when omitted."),
+    part: partSchema.describe("A part. kind is required. label, icon and variant are filled in when omitted."),
     x: z.number().optional(),
     y: z.number().optional(),
     axis: z.enum(["x", "y"]).optional(),
   }).describe("Add a part. Omit x and y to stack it and tidy the screen. With x and y, they are relative to the screen."),
-  z.object({ op: z.literal("update_part"), id: z.string(), patch: z.record(z.string(), z.unknown()).describe("Fields to change. null clears a field.") }),
+  z.object({ op: z.literal("update_part"), id: z.string(), patch: partPatchSchema.describe("Fields to change. null clears a field.") }),
   z.object({ op: z.literal("remove_part"), id: z.string() }),
   z.object({
     op: z.literal("move_part"),
@@ -58,7 +60,7 @@ export function mcpHandler(base: () => string) {
       "m3e_get_guide",
       {
         title: "Read the design guide",
-        description: "The M3E Canvas document format, plus how these tools place, tidy and store a design. Read this before creating a design.",
+        description: "The M3E Canvas document format, plus how these tools place, tidy and store a design. Consult it for detailed layout rules.",
         annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       },
       async () => textResult(guideText()),
@@ -68,9 +70,9 @@ export function mcpHandler(base: () => string) {
       "m3e_create_design",
       {
         title: "Create a design",
-        description: "Validate a design, place anything that omitted coordinates, tidy it, and store it. Returns an id, a live canvas url, and an outline. Read m3e_get_guide for the document shape. A group may set screen to a frame id and omit x and y.",
+        description: "Validate a design, place anything that omitted coordinates, tidy it, and store it. Returns id, revision and live URL. Tidy defaults to true; use false for exact coordinates. Set group.screen and omit x/y to stack parts. Omit ids to generate unique ids; explicit ids must be unique across screens, groups and parts.",
         inputSchema: z.object({
-          doc: z.record(z.string(), z.unknown()).describe("The design document: title, brief, paletteKey, theme, frames, groups."),
+          doc: documentSchema.describe("The design document: title, brief, paletteKey, theme, frames, groups."),
           tidy: z.boolean().optional().describe("Set false to keep the coordinates you sent. Default true."),
         }),
         annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -79,7 +81,7 @@ export function mcpHandler(base: () => string) {
       async ({ doc, tidy }) => {
         const result = await createFromDraft(doc, origin(), tidy !== false);
         if (!result.ok) return textResult(result.text, { error: true, data: { problems: result.problems } });
-        return textResult(result.text, { id: result.id, data: { id: result.id, rev: result.rev, url: result.url, share: result.share, outline: result.outline } });
+        return textResult(result.text, { id: result.id, data: { id: result.id, rev: result.rev, url: result.url } });
       },
     );
 
@@ -99,7 +101,7 @@ export function mcpHandler(base: () => string) {
       async ({ id, format, screen }) => {
         const result = await readStored(id, format ?? "outline", screen, origin());
         if (!result.ok) return textResult(result.text, { error: true });
-        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url } });
+        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url, share: result.share, outline: result.outline } });
       },
     );
 
@@ -115,7 +117,7 @@ export function mcpHandler(base: () => string) {
       async ({ id, operations }) => {
         const result = await editStored(id, operations, origin());
         if (!result.ok) return textResult(result.text, { error: true, data: { problems: result.problems } });
-        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url, outline: result.outline } });
+        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url } });
       },
     );
 
@@ -142,7 +144,7 @@ export function mcpHandler(base: () => string) {
       async ({ id, ...patch }) => {
         const result = await themeStored(id, patch, origin());
         if (!result.ok) return textResult(result.text, { error: true, data: { problems: result.problems } });
-        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url, outline: result.outline } });
+        return textResult(result.text, { id, data: { id, rev: result.rev, url: result.url } });
       },
     );
 
@@ -156,8 +158,9 @@ export function mcpHandler(base: () => string) {
         _meta: ui(),
       },
       async ({ id, screen }) => {
-        const current = await readStored(id, "outline", screen, origin());
-        if (!current.ok) return textResult(current.text, { error: true });
+        const current = await readDesign(id);
+        if (!current) return textResult(`No design has id "${id}".`, { error: true });
+        if (screen && !current.doc.frames.some((frame) => frame.id === screen)) return textResult(`No screen has id "${screen}".`, { error: true });
         const shot = screen ? `?shot=${encodeURIComponent(screen)}` : "?shot=";
         const pictured = await screenshotDesign(`${origin()}/d/${id}/${shot}`);
         if ("error" in pictured) return textResult(pictured.error, { error: true, id });
@@ -185,6 +188,13 @@ export function mcpHandler(base: () => string) {
     );
 
     server.registerResource(
+      "design-guide",
+      "m3e://guide",
+      { mimeType: "text/markdown", description: "Detailed canvas layout and authoring rules." },
+      async (uri) => ({ contents: [{ uri: uri.href, mimeType: "text/markdown", text: guideText() }] }),
+    );
+
+    server.registerResource(
       "design-preview",
       new ResourceTemplate("ui://m3e/design/{id}", { list: undefined }),
       { mimeType: "text/html;profile=mcp-app", description: "Inline HTML preview of a stored M3E Canvas design." },
@@ -209,7 +219,7 @@ export function mcpHandler(base: () => string) {
           role: "user" as const,
           content: {
             type: "text" as const,
-            text: `Read m3e_get_guide, then create the design with m3e_create_design. Check it with m3e_screenshot and fix it with m3e_edit_design.\n\n${brief}`,
+            text: `Create the design with m3e_create_design. Use screen groups without coordinates and default tidy for ordinary layouts; set tidy false when matching exact coordinates. Omit ids unless needed for links. Consult the m3e://guide resource only for additional layout rules. Check it with m3e_screenshot and fix it with m3e_edit_design.\n\n${brief}`,
           },
         }],
       }),

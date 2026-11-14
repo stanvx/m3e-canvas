@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { DEFAULT_THEME, R_FULL, baseRadii, makeItem, normalizeTheme, railLayoutWidth, railMetrics, runCorners, scaleR, setGlobalShape, sizeOf, isScrollableTabs, tabScrollOffset, removeTabPatch, tabCountPatch, SCROLL_TAB_W, type Item } from "./tokens";
+import { textHeightKey, cardFillOf, frameOfGroup, DEFAULT_THEME, R_FULL, baseRadii, makeItem, normalizeTheme, railLayoutWidth, railMetrics, runCorners, scaleR, setGlobalShape, sizeOf, isScrollableTabs, tabScrollOffset, removeTabPatch, tabCountPatch, SCROLL_TAB_W, type Item } from "./tokens";
 
 afterEach(() => setGlobalShape("rounded")); // restore the module default
 
@@ -128,5 +128,34 @@ describe("scrollable tab rows", () => {
     expect(tabScrollOffset(row(7, 4), 412)).toBe(5.5 * SCROLL_TAB_W - 412);
     expect(tabScrollOffset(row(7, 6), 412)).toBe(7 * SCROLL_TAB_W - 412);
     expect(tabScrollOffset(row(7, 6), 1280)).toBe(0);
+  });
+});
+
+
+describe("wrapped text and selected cards", () => {
+  it("keeps the wrap width, estimates multiline height and uses browser height when available", () => {
+    const text = { ...makeItem("text"), id: "text", label: "How do you write messages?", size: 28, wrapWidth: 180 };
+    expect(sizeOf(text, {}).w).toBe(180);
+    expect(sizeOf(text, {}).h).toBeGreaterThan(28 * 1.3);
+    expect(sizeOf(text, { [textHeightKey(text.id)]: 73 })).toEqual({ w: 180, h: 73 });
+    expect(sizeOf({ ...text, wrapWidth: undefined }, {}).h).toBe(Math.round(28 * 1.3));
+  });
+
+  it("assigns pending measured runs by origin, then uses measured bounds", () => {
+    const item = { ...makeItem("text"), id: "letter", label: "p" };
+    const group = { id: "g", x: 373, y: 200, axis: "x" as const, items: [item] };
+    const frames = [{ id: "home", name: "Home", x: 0, y: 0 }];
+    expect(frameOfGroup(group, frames, {})?.id).toBe("home");
+    const row = { ...group, x: 340, items: [item, { ...makeItem("radio"), id: "radio", label: "" }] };
+    expect(frameOfGroup(row, frames, {})?.id).toBe("home");
+    expect(frameOfGroup(group, frames, { letter: 10 })?.id).toBe("home");
+    expect(frameOfGroup({ ...group, x: 420 }, frames, {})).toBeUndefined();
+    expect(frameOfGroup(group, frames, { letter: 120 })).toBeUndefined();
+  });
+
+  it("uses the selected container unless an author chose a fill", () => {
+    const card = { ...makeItem("card"), checked: true };
+    expect(cardFillOf(card)).toBe("primaryContainer");
+    expect(cardFillOf({ ...card, fill: "surface" })).toBe("surface");
   });
 });

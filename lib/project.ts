@@ -20,6 +20,8 @@ const optionalNumber = (v: unknown) => v === undefined || Number.isFinite(v);
 const validItem = (item: unknown) =>
   isRecord(item) &&
   validCorners(item.corners) &&
+  (item.wrapWidth === undefined || (Number.isFinite(item.wrapWidth) && (item.wrapWidth as number) > 0)) &&
+  (item.checked === undefined || typeof item.checked === "boolean") &&
   (item.railExpanded === undefined || typeof item.railExpanded === "boolean") &&
   (item.railModal === undefined || typeof item.railModal === "boolean") &&
   (item.collapseOnScroll === undefined || typeof item.collapseOnScroll === "boolean") &&

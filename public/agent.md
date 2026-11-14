@@ -112,7 +112,7 @@ Sizes are in dp; `size` is the width unless noted. Content width inside the phon
 | `fabMenu` | FAB menu, drawn open | `tabs` as its entries | 220 wide |
 | `toolbar` | floating toolbar | `tabs` as icon buttons, `variant` `tonal` (standard) or `filled` (vibrant) | 64 tall |
 | `chip` | chip | `label`, `icon`, `checked` | text-sized × 32 |
-| `card` | card with image area, title, body | `label`, `supporting`, `icon`, `variant` `filled` (default) / `elevated` / `outlined`, `fill` background token, `size` width, `size2` height, `"noImage": true` to drop the image area, `src` an https picture for it, `action` | 380 × 223 |
+| `card` | card with image area, title, body | `label`, `supporting`, `icon`, `variant` `filled` (default) / `elevated` / `outlined`, `fill` background token, `size` width, `size2` height, `checked` for a selected primary border and primaryContainer fill, `"noImage": true` to drop the image area, `src` an https picture for it, `action` | 380 × 223 |
 | `listItem` | list item | `label`, `supporting`, `icon` leading, `icon2` trailing, or `"switch": true` for a trailing switch with `checked` as its state, `action` | 380 × 72 |
 | `box` | plain container, or a bottom sheet when `checked` | `size` width, `size2` height, `fill` token, `radiusTop`, `radiusBottom` | 412 × 220 |
 | `dialog` | dialog | `label` title, `supporting` body, `icon` | 312 × 220, centered |
@@ -123,7 +123,7 @@ Sizes are in dp; `size` is the width unless noted. Content width inside the phon
 | `checkbox` | checkbox with label | `label`, `checked` | 40 tall |
 | `radio` | radio button with label | `label`, `checked` | 40 tall |
 | `slider` | slider | `value` 0–100 | 380 × 44 |
-| `text` | a line of text | `label`, `size` font size (28 default), `bold` | |
+| `text` | text (one line by default) | `label`, `size` font size (28 default), `bold`, `wrapWidth` optional width in dp for wrapping | |
 | `image` | image | `size` square side, `src` an https URL (optional) | 200 × 200 |
 | `camera` | camera preview placeholder | `size` width, `size2` height | 380 × 507 |
 | `map` | map placeholder | `size` width, `size2` height | 380 × 285 |

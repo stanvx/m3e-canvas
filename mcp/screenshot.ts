@@ -1,6 +1,30 @@
+import type { Browser, BrowserContext } from "playwright-core";
 import { existsSync } from "node:fs";
 
 const shots: number[] = [];
+let browserPromise: Promise<Browser> | undefined;
+
+async function sharedBrowser(executablePath: string): Promise<Browser> {
+  if (!browserPromise) {
+    browserPromise = import("playwright-core").then(({ chromium }) => chromium.launch({
+      executablePath,
+      args: process.env.M3E_NO_SANDBOX === "1" ? ["--no-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"],
+    }));
+    const pending = browserPromise;
+    pending.then((browser) => browser.on("disconnected", () => {
+      if (browserPromise === pending) browserPromise = undefined;
+    }), () => {
+      if (browserPromise === pending) browserPromise = undefined;
+    });
+  }
+  return browserPromise;
+}
+
+export async function closeScreenshotBrowser() {
+  const pending = browserPromise;
+  browserPromise = undefined;
+  if (pending) await pending.then((browser) => browser.close(), () => {});
+}
 
 function chromePath(): string | undefined {
   const candidates = [
@@ -26,13 +50,11 @@ export async function screenshotDesign(url: string): Promise<{ png: Buffer } | {
     return { error: "No Chrome or Chromium found. Set M3E_CHROME to the browser binary. On the container image it is /usr/bin/chromium." };
   }
   shots.push(now);
-  const { chromium } = await import("playwright-core");
-  const browser = await chromium.launch({
-    executablePath,
-    args: process.env.M3E_NO_SANDBOX === "1" ? ["--no-sandbox", "--disable-dev-shm-usage"] : ["--disable-dev-shm-usage"],
-  });
+  let context: BrowserContext | undefined;
   try {
-    const page = await browser.newPage({ viewport: { width: 480, height: 1000 }, deviceScaleFactor: 1 });
+    const browser = await sharedBrowser(executablePath);
+    context = await browser.newContext({ viewport: { width: 480, height: 1000 }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
     await page.goto(url, { waitUntil: "networkidle", timeout: 20_000 });
     await page.waitForSelector("html[data-m3e-shot]", { timeout: 15_000 });
     const id = await page.getAttribute("html", "data-m3e-shot");
@@ -45,6 +67,6 @@ export async function screenshotDesign(url: string): Promise<{ png: Buffer } | {
     const message = error instanceof Error ? error.message : "screenshot failed";
     return { error: `Could not photograph the screen. ${message} The canvas must be serving ${url}. Run npm run build, then start this server, or set M3E_PUBLIC_URL to a running canvas.` };
   } finally {
-    await browser.close();
+    await context?.close().catch(() => {});
   }
 }

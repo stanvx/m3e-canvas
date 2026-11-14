@@ -32,7 +32,9 @@ describe("stored designs", () => {
     if (!created.ok) return;
     expect(created.url).toBe(`http://canvas.test/d/${created.id}/`);
     expect(created.rev).toBe(1);
-    expect(created.outline).toMatch(/Tomato soup/);
+    expect(created).not.toHaveProperty("outline");
+    expect(created).not.toHaveProperty("share");
+    expect(created.text).not.toContain("Tomato soup");
 
     const read = await readStored(created.id, "outline", "home", "http://canvas.test");
     expect(read.ok).toBe(true);
@@ -44,13 +46,21 @@ describe("stored designs", () => {
     expect(edited.ok).toBe(true);
     if (!edited.ok) return;
     expect(edited.rev).toBe(2);
-    expect(edited.outline).toMatch(/Pea soup/);
+    expect(edited).not.toHaveProperty("outline");
+    const editedRead = await readStored(created.id, "outline", undefined, "http://canvas.test");
+    expect(editedRead.text).toMatch(/Pea soup/);
 
     const themed = await themeStored(created.id, { seed: "#6750A4", shape: "full" }, "http://canvas.test");
     expect(themed.ok).toBe(true);
     if (!themed.ok) return;
-    expect(themed.outline).toMatch(/palette: custom/);
-    expect(themed.outline).toMatch(/shape: full/);
+    expect(themed).not.toHaveProperty("outline");
+    const themedRead = await readStored(created.id, "outline", undefined, "http://canvas.test");
+    expect(themedRead.text).toMatch(/palette: custom/);
+    expect(themedRead.text).toMatch(/shape: full/);
+    expect(themedRead).toHaveProperty("share", expect.stringContaining("#docz="));
+    for (const format of ["outline", "json", "prompt"] as const) {
+      expect(await readStored(created.id, format, "missing", "http://canvas.test")).toEqual({ ok: false, text: 'No screen has id "missing".' });
+    }
 
     const listed = await listStored();
     expect(listed.designs.map((row) => row.id)).toContain(created.id);

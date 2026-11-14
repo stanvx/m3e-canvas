@@ -1,3 +1,4 @@
+import { closeScreenshotBrowser } from "./screenshot";
 import { createReadStream, existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, resolve, sep } from "node:path";
@@ -200,6 +201,7 @@ export function start(port = Number(process.env.PORT ?? 8787), host = process.en
       else res.end();
     });
   });
+  server.once("close", () => { void closeScreenshotBrowser(); });
   return new Promise<typeof server>((resolveReady, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
